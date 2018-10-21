@@ -3,6 +3,7 @@
 import threading
 import random
 import time
+import os
 import curses
 
 lock = threading.RLock()
@@ -11,7 +12,6 @@ event = threading.Event()
 
 
 class playground(object):
-    MESSAGE = "*"
 
     def __init__(self, stdscr):
         self.stdscr = stdscr
@@ -31,6 +31,8 @@ class playground(object):
 
         self.__drawboder(stdscr, self.top, self.bottom, self.left, self.right)
 
+        #threading.Thread(target=self.__monitor, daemon=True).start()
+
     def __drawboder(self, stdscr, top, bottom, left, right):
         stdscr.addstr(top, left, "+")
         stdscr.addstr(bottom, left, "+")
@@ -47,50 +49,67 @@ class playground(object):
 
         stdscr.refresh()
 
-    def matrix(self):
+    def __monitor(self):
+
+        # self.stdscr.move(0,0)
 
         while True:
+            self.stdscr.nodelay(True)
 
-            length = random.randint(3, 15)
+            with lock:
+                ch = self.stdscr.getch()
+
+            if ch == ord('q'):
+                event.set()
+                curses.endwin()
+                os.system("clear")
+                break
+
+    def matrix(self):
+
+        attr = curses.color_pair(2)
+        length = random.randint(1, 15)
+        position = []
+        name = threading.current_thread().name
+
+        def gen_bin(length):
             binary = []
-            name = threading.current_thread().name
-
-            time.sleep(random.randint(0, 5000) * 0.001)
-
             for i in range(length):
-                binary.append(random.choice('01'))
-
-            position = [i for i in range(self.top + 1, self.top + length)]
+                binary.append(random.choice(
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ&%$#@!~1234567890"))
 
             while True:
+                yield from binary
 
-                with lock:
-                    for y, i in zip(position, binary):
-                        self.stdscr.addstr(
-                            y, int(name), i, curses.color_pair(2))
-                        self.stdscr.refresh()
+        message = gen_bin(length)
 
-                self.stdscr.addstr(position[0], int(name), " ")
+        time.sleep(random.randint(0, 5000) * 0.001)
 
-                del position[0]
+        while not event.is_set():
+            with lock:
+                if len(position) == 0:
+                    position = [self.top + 1]
+                    self.stdscr.addstr(position[0], int(
+                        name), next(message), attr)
+                    length = random.randint(1, 15)
 
-                try:
-                    head = position[-1] + 1
-                except IndexError:
-                    break
+                if position[0] < self.bottom - 1:
+                    position.insert(0, position[0] + 1)
+                    self.stdscr.addstr(position[0], int(
+                        name), next(message), attr)
 
-                if head < self.bottom:
-                    position.append(head)
+                if (len(position) > length or position[0] == self.bottom - 1) and len(position) > 0:
+                    self.stdscr.addstr(position.pop(), int(name), " ")
 
-                time.sleep(0.09)
+                self.stdscr.refresh()
 
-        self.stdscr.getch()
+            time.sleep(0.05)
 
 
 def main(stdscr):
     te = playground(stdscr)
 
-    for i in range(te.left + 1, te.right):
+    for i in range(te.left + 1, te.right - 1):
         temp = threading.Thread(target=te.matrix, name=i)
         temp.start()
 
